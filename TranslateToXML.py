@@ -107,7 +107,7 @@ def replace_escape_line(txt):
 def writeline(f, txt, tab=True):
     txt = txt.strip()
     if tab:
-        f.write("\t" + replace_escape_line(txt) + "\n")
+        f.write("    " + replace_escape_line(txt) + "\n")
     else:
         f.write(txt + "\n")
 
@@ -115,6 +115,7 @@ def writeline(f, txt, tab=True):
 def writefile(f, idx_lang, sheet, additional=''):
     id_idx = 0  # index for android string key.
 
+    writeline(f, '<?xml version="1.0" encoding="utf-8"?>', False)
     writeline(f, "<resources>", False)
 
     if len(additional) > 0:

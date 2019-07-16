@@ -4,6 +4,8 @@ import io
 import pickle
 import os.path
 import re
+import subprocess
+from pathlib import Path
 
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -35,8 +37,8 @@ def replace_escape_word(content):
     tmp = tmp.replace('\"', '\\"')
     tmp = tmp.replace('&', '&amp;')
     tmp = tmp.replace('...', '&#8230;')
+    tmp = tmp.replace('-', '&#8211;')
     tmp = tmp.replace('\\\\', '\\')
-
     return tmp
 
 
@@ -62,9 +64,19 @@ def handle_nested_html(content):
             end_tag_end = idx
             phase += 1
 
+    # if short tag like <b>, take it exception (not nested).
+    if start_tag_end - start_tag_start < 4:
+        return False, start_tag_start, start_tag_end, end_tag_start, end_tag_end
+
     # if phase is 4, nested tag exist.
     return phase == 4, start_tag_start, start_tag_end, end_tag_start, end_tag_end
 
+def post_process(txt):
+    # txt = txt.replace('<b>', '<![CDATA[<b>]]>')
+    # txt = txt.replace('</b>', '<![CDATA[</b>]]>')
+    # txt = txt.replace('<u>', '<![CDATA[<u>]]>')
+    # txt = txt.replace('</u>', '<![CDATA[</u>]]>')
+    return txt
 
 def replace_escape_line(txt):
     matches = re.findall(pattern, txt)
@@ -76,7 +88,7 @@ def replace_escape_line(txt):
 
         if not is_nested:
             escape_changed = replace_escape_word(content)
-            return txt.replace(content, escape_changed)
+            result = txt.replace(content, escape_changed)
         else:
             # 1. content before nested tag
             before_nested = content[content_start: start_tag_start]
@@ -99,10 +111,13 @@ def replace_escape_line(txt):
             if len(after_nested) > 0:
                 txt = txt.replace(after_nested, after_nested_changed)
 
-            return txt
+            result = txt
 
     except IndexError:
-        return txt
+        result = txt
+
+    return post_process(result)
+
 
 def writeline(f, txt, tab=True):
     txt = txt.strip()
@@ -160,29 +175,30 @@ def save(sheet):
         if not os.path.exists(dir):
             os.mkdir(dir)
 
-        f = io.open(os.path.join(dir, 'strings.xml'), "w", encoding='utf8')
-        idx_lang = dict_col.get(lang)
+        # f = io.open(os.path.join(dir, 'strings.xml'), "w", encoding='utf8')
+        with io.open(os.path.join(dir, 'strings.xml'), "w", encoding='utf8') as f:
+            idx_lang = dict_col.get(lang)
 
-        writefile(f, idx_lang, sheet)
-        f.close()
+            writefile(f, idx_lang, sheet)
+        # f.close()
 
     # 3. retrieve current string from android project path,
     path_current = os.path.join(default_android_project, r'app\src\main\res\values\strings.xml')
-    f_current = io.open(path_current, 'r', encoding='utf8')
-    # non_translatable_strings = ''
-    non_translatable_string_array = []
-    if not os.path.isfile(path_current):
-        print('not found android project. skipping this process...')
-    else:
-        for line in f_current:
-            if line.startswith('<resources>'):
-                continue
+    # f_current = io.open(path_current, 'r', encoding='utf8')
+    with io.open(path_current, 'r', encoding='utf8') as f_current:
+        # non_translatable_strings = ''
+        non_translatable_string_array = []
+        if not os.path.isfile(path_current):
+            print('not found android project. skipping this process...')
+        else:
+            for line in f_current:
+                if line.startswith('<resources>'):
+                    continue
 
-            if 'translatable=\"false\"' in line or '<!--' in line or line == '\n':
-                non_translatable_string_array.append(line)
-                # non_translatable_strings += line
-
-    f_current.close()
+                if 'translatable=\"false\"' in line or '<!--' in line or line == '\n':
+                    non_translatable_string_array.append(line)
+                    # non_translatable_strings += line
+    # f_current.close()
 
     # 4. create xml file for default language
     dir = os.path.join(OUTPUT_FOLDER, 'values')
@@ -254,6 +270,12 @@ def main():
 
         print('Done')
         print('All tasks are completed. You can find the output in {}'.format(OUTPUT_FOLDER))
+
+        # open explorer where the output is generated
+        generated_file_path = Path(__file__).cwd().joinpath(OUTPUT_FOLDER).joinpath('values')
+        android_file_path = Path(default_android_project).joinpath(r'app\src\main\res\values')
+        subprocess.Popen(r'explorer /select, "{}"'.format(generated_file_path))
+        subprocess.Popen(r'explorer /select, "{}"'.format(android_file_path))
 
 
 if __name__ == '__main__':
